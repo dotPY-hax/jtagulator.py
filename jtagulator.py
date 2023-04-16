@@ -96,6 +96,8 @@ class JtagulatorUART(Jtagulator):
 
     def parse_baudrates(self, console_output):
         console_output = console_output.decode()
+        if "No target device(s) found!" in console_output:
+            return
         start_baud_block = console_output.find("-\r\n")
         end_baud_block = console_output.find("-\r\n", start_baud_block+1)
         baud_block = console_output[start_baud_block+2:end_baud_block]
@@ -129,6 +131,17 @@ class JtagulatorUART(Jtagulator):
             self.baud = baud
 
     def drop_to_passthru(self):
+        result = self._drop_to_passthru()
+        if not result:
+            return False
+
+        self._connection.drop_to_miniterm()
+        return True
+
+    def use_passthru(self):
+        return self._drop_to_passthru()
+
+    def _drop_to_passthru(self):
         self.uart()
         success = b"Enter TXD pin"
         result = self._connection.write_check("P", success)
@@ -154,8 +167,6 @@ class JtagulatorUART(Jtagulator):
         result = self._connection.write_check("N", success)
         if not result:
             return False
-
-        self._connection.drop_to_miniterm()
         return True
 
     def get_pinout(self, start_pin, stop_pin):

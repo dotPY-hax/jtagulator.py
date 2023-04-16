@@ -50,10 +50,10 @@ class Connection:
         time.sleep(0.1)
         buffer = b""
         while self.serial_connection.in_waiting:
-            time.sleep(0.1)
             n_bytes = self.serial_connection.in_waiting
             part = self.serial_connection.read(n_bytes)
             buffer += part
+            time.sleep(0.1)
         return buffer
 
     def print(self):
