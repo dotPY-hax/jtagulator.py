@@ -1,11 +1,14 @@
 from jtagulator_serial import Connection
+from passthru_serial import Passthru
 
 
 class Jtagulator:
-    def __init__(self):
+    def __init__(self, voltage):
         self._connection = None
-        self.voltage = None
+        self.voltage = voltage
         self.start()
+
+        self.uses_passthru = False
 
     def start(self):
         print("Starting JTAGULATOR")
@@ -37,17 +40,55 @@ class Jtagulator:
         return result
 
 class JtagulatorUART(Jtagulator):
-    def __init__(self):
+    def __init__(self, voltage):
         self.rx = None
         self.tx = None
         self.baud = None
         self.possible_baud_rates = {}
-        super().__init__()
+        super().__init__(voltage)
 
     def uart(self):
         result = self._connection.write_read("U")
         if b"UART>" in result:
             return True
+
+    def get_tx_only(self, start_pin, stop_pin):
+        self.uart()
+        success = b"Enter starting channel"
+        result = self._connection.write_check("T", success)
+        if not result:
+            return False
+
+        success = b"Enter ending channel"
+        result = self._connection.write_check(str(start_pin), success)
+        if not result:
+            return False
+
+        success = b"Ignore non-standard baud rates?"
+        result = self._connection.write_check(str(stop_pin), success)
+        if not result:
+            return False
+
+        success = b"Press spacebar to begin (any other key to abort)"
+        result = self._connection.write_check("N", success)
+        if not result:
+            return False
+
+        self._connection.serial_connection.write(b" ")
+        self._connection.serial_connection.read_until(b"TXD: ")
+        tx = self._connection.serial_connection.read_until(b"\r\n")
+        tx = tx.strip()
+        self._connection.serial_connection.read_until(b"Baud (Best Fit): ")
+        baud = self._connection.serial_connection.read_until(b"\r\n")
+        baud = baud.strip()
+
+        if tx and baud:
+            self.tx = int(tx)
+            self.baud = int(baud)
+            print("Found tx and baud rate")
+            print(self)
+        else:
+            print("Nothing found :(")
 
     def uart_pinout(self, start_pin, stop_pin):
         success = b"Enter starting channel"
@@ -98,13 +139,18 @@ class JtagulatorUART(Jtagulator):
         console_output = console_output.decode()
         if "No target device(s) found!" in console_output:
             return
-        start_baud_block = console_output.find("-\r\n")
-        end_baud_block = console_output.find("-\r\n", start_baud_block+1)
+        start_indicator = "JTAGulating! Press any key to abort..."
+        end_indicator = "UART scan complete."
+        start_baud_block = console_output.find(start_indicator)
+        end_baud_block = console_output.find(end_indicator)
         baud_block = console_output[start_baud_block+2:end_baud_block]
         baud_blocks = baud_block.split("\r\n\r\n")
-
         for block in baud_blocks:
-            tx, rx, baud, data, *_ = block.split("\r\n")
+            try:
+                tx, rx, baud, data, *_ = block.split("\r\n")
+            except ValueError:
+                continue
+
             self.tx = tx.split()[-1]
             self.rx = rx.split()[-1]
             baud = baud.split()[-1]
@@ -131,6 +177,11 @@ class JtagulatorUART(Jtagulator):
             self.baud = baud
 
     def drop_to_passthru(self):
+        if self.uses_passthru:
+            self._connection.drop_to_miniterm()
+            return True
+
+
         result = self._drop_to_passthru()
         if not result:
             return False
@@ -139,7 +190,8 @@ class JtagulatorUART(Jtagulator):
         return True
 
     def use_passthru(self):
-        return self._drop_to_passthru()
+        if self.uses_passthru or self._drop_to_passthru():
+            return Passthru(self)
 
     def _drop_to_passthru(self):
         self.uart()
@@ -167,6 +219,7 @@ class JtagulatorUART(Jtagulator):
         result = self._connection.write_check("N", success)
         if not result:
             return False
+        self.uses_passthru = True
         return True
 
     def get_pinout(self, start_pin, stop_pin):

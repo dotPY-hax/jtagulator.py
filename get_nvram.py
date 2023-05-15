@@ -1,14 +1,14 @@
 from get_uart import get_uart
 
 
-def get_nvram():
-    jtagulator_object = get_uart(3.3, 0, 1)
+def get_nvram(voltage, start_pin, stop_pin):
+    jtagulator_object = get_uart(voltage, start_pin, stop_pin)
     if jtagulator_object.rx and jtagulator_object.tx and jtagulator_object.baud:
-        jtagulator_object.use_passthru()
-        jtagulator_object._connection.write_read("\r\n")
-        jtagulator_object._connection.write_read("\r\n")
-        jtagulator_object._connection.write("nvram show")
-        console_output = jtagulator_object._connection.read()
+        passthru = jtagulator_object.use_passthru()
+        passthru.interact("\r\n")
+        passthru.interact("\r\n")
+        passthru.write("nvram show")
+        console_output = passthru.read()
         return parse_nvram(console_output)
     return {}
 
